@@ -20,10 +20,9 @@ from torch.autograd import Variable
 from metrics.ssim import ssim
 from metrics.psnr import psnr
 
+from anamnet import AnamNet
 from models import *
-# from datasets import *
 from mydataset import *
-from skimage import metrics
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -45,6 +44,7 @@ parser.add_argument("--img_width", type=int, default=256, help="size of image wi
 parser.add_argument("--channels", type=int, default=1, help="number of image channels")
 parser.add_argument("--sample_interval", type=int, default=400, help="interval between sampling of images from generators")
 parser.add_argument("--checkpoint_interval", type=int, default=50, help="interval between model checkpoints")
+parser.add_argument("--gen", type=bool, default=False, help="Selecting generator, 0: pix2pix_gen, 1:anamnet_gen")
 opt = parser.parse_args()
 # print(opt)
 
@@ -69,7 +69,8 @@ lambda_pixel = 100
 patch = (1, opt.img_height // 2 ** 4, opt.img_width // 2 ** 4)
 
 # Initialize generator and discriminator
-generator = GeneratorUNet(in_channels=1, out_channels=1).to(device)
+generator = GeneratorUNet(in_channels=1, out_channels=1).to(device) \
+if opt.gen == 0 else AnamNet().to(device)
 discriminator = Discriminator(in_channels=1).to(device)
 
 # Initialize weights
@@ -95,59 +96,161 @@ if shuffle_dataset:
 	np.random.shuffle(indices)
 train_indices, test_indices = indices[split:], indices[:split]
 
-# Creating PT data samplers and loaders:
+# Creating data samplers and loaders:
 train_sampler = SubsetRandomSampler(train_indices)
 test_sampler = SubsetRandomSampler(test_indices)
 
 train_loader = DataLoader(dataset, batch_size=opt.batch_size, sampler=train_sampler)
 test_loader = DataLoader(dataset, batch_size=opt.batch_size, sampler=test_sampler)
 
-anloss_G = []
-anloss_D = []
+# anloss_G = []
+# anloss_D = []
+# anssim = []
+# anpsnr = []
 
 t_loss_G = []
 t_loss_D = []
+t_ssim = []
+t_psnr = []
+t_pred_d = []
 
-# ----------
-#  Training
-# ----------
 cudnn.benchmark = True
 prev_time = time.time()
-# fig = plt.figure()
-with open("out.csv", "wt") as f:
-	f.write("current epoch, n_epochs, current batch, n_batches, D loss, G loss, psnr, ssim\n")
-	for epoch in tqdm(range(opt.epoch, opt.n_epochs)):
-		for i, batch in enumerate(tqdm(train_loader)):
-			# Model inputs
-			real_A = Variable(batch["A"].type(torch.FloatTensor)).to(device)
-			real_B = Variable(batch["B"].type(torch.FloatTensor)).to(device)
+f = open("loss_pix2pix_{0}{1}_train.csv".format(int(opt.gen), opt.n_epochs), "wt")
+g = open("loss_pix2pix_{0}{1}_test.csv".format(int(opt.gen), opt.n_epochs), "wt")
+# f.write("current epoch, n_epochs, current batch, n_batches, D loss, G loss, \
+# 	psnr avg, ssim avg, D pred\n")
+# g = open(f"pix2pix_{opt_gen}_loss_{opt.n_epochs}_test.csv", "wt")
+# g.write("current epoch, n_epochs, current batch, n_batches, D loss, G loss, \
+# 	psnr avg, ssim avg, D pred\n")
 
-			# Adversarial ground truths
-			valid = Variable(torch.FloatTensor(np.ones((real_A.size(0), *patch))), requires_grad=False).to(device)
-			fake = Variable(torch.FloatTensor(np.zeros((real_A.size(0), *patch))), requires_grad=False).to(device)
+f.write("epoch, D loss, G loss, psnr avg, ssim avg, D pred\n")
+g.write("epoch, D loss, G loss, psnr avg, ssim avg, D pred\n")
+
+for epoch in tqdm(range(opt.epoch, opt.n_epochs)):
+	# ----------
+	#  Training
+	# ----------
+	for i, batch in enumerate(tqdm(train_loader)):
+		# Model inputs
+		real_A = Variable(batch["A"].type(torch.FloatTensor)).to(device)
+		real_B = Variable(batch["B"].type(torch.FloatTensor)).to(device)
+
+		# Adversarial ground truths
+		valid = Variable(torch.FloatTensor(np.ones((real_A.size(0), *patch))), \
+			requires_grad=False).to(device)
+		fake = Variable(torch.FloatTensor(np.zeros((real_A.size(0), *patch))), \
+			requires_grad=False).to(device)
+
+		# ------------------
+		#  Train Generator
+		# ------------------
+
+		optimizer_G.zero_grad()
+		# GAN loss
+		fake_B = generator(real_A)
+		pred_fake = discriminator(fake_B, real_A)
+		t_pred_d.append(torch.mean(pred_fake).item())
+		loss_GAN = criterion_GAN(pred_fake, valid)
+		# Pixel-wise loss
+		loss_pixel = criterion_pixelwise(fake_B, real_B)
+		# Total loss
+		loss_G = loss_GAN + lambda_pixel * loss_pixel
+		t_loss_G.append(loss_G.item())
+		loss_G.backward()
+		optimizer_G.step()
+
+		# ---------------------
+		#  Train Discriminator
+		# ---------------------
+
+		optimizer_D.zero_grad()
+		# Real loss
+		pred_real = discriminator(real_B, real_A)
+		loss_real = criterion_GAN(pred_real, valid)
+		# Fake loss
+		pred_fake = discriminator(fake_B.detach(), real_A)
+		loss_fake = criterion_GAN(pred_fake, fake)
+		# Total loss
+		loss_D = (0.5 * (loss_real + loss_fake))
+		t_loss_D.append(loss_D.item())
+		loss_D.backward()
+		optimizer_D.step()
+
+		# metric values
+		ssim_val = ssim(fake_B, real_B, data_range=1.0, size_average=False)
+		ssim_val = torch.mean(ssim_val).item()
+		t_ssim.append(ssim_val)
+		psnr_val = psnr(fake_B, real_B, data_range=1.0)
+		psnr_val = torch.mean(psnr_val).item()
+		t_psnr.append(psnr_val)
+
+		# --------------
+		#  Log Progress
+		# --------------
+
+		# Determine approximate time left
+		batches_done = epoch * len(train_loader) + i
+		batches_left = opt.n_epochs * len(train_loader) - batches_done
+		time_left = datetime.timedelta(seconds=batches_left * \
+			(time.time() - prev_time))
+		prev_time = time.time()
+
+		# f.write(f"{epoch}, {opt.n_epochs}, {i}, {len(train_loader)}, \
+		# 	{round(loss_D.item(), 4)}, {round(loss_G.item(), 4)}, \
+		# 	{round(psnr_val, 4)}, {round(ssim_val, 4)}, \
+		# 	{round(torch.mean(pred_fake), 4)}\n")
+
+	ep_loss_d = np.asarray(t_loss_D).mean()
+	ep_loss_g = np.asarray(t_loss_G).mean()
+	ep_ssim = np.asarray(t_ssim).mean()
+	ep_psnr = np.asarray(t_psnr).mean()
+	ep_pred_d = np.asarray(t_pred_d).mean()
+
+	f.write(f"{epoch+1}, {round(ep_loss_d, 4)}, {round(ep_loss_g, 4)}, \
+		{round(ep_psnr, 4)}, {round(ep_ssim, 4)}, {round(ep_pred_d, 4)}\n")
+
+	t_loss_D = []
+	t_loss_G = []
+	t_psnr   = []
+	t_ssim   = []
+	t_pred_d = []
+	
+	# ----------
+	#  Testing
+	# ----------
+	for i, batch in enumerate(tqdm(test_loader)):
+		# Model inputs
+		real_A = Variable(batch["A"].type(torch.FloatTensor)).to(device)
+		real_B = Variable(batch["B"].type(torch.FloatTensor)).to(device)
+
+		# Adversarial ground truths
+		valid = Variable(torch.FloatTensor(np.ones((real_A.size(0), *patch))), \
+			requires_grad=False).to(device)
+		fake = Variable(torch.FloatTensor(np.zeros((real_A.size(0), *patch))), \
+			requires_grad=False).to(device)
+
+		with torch.no_grad():
 
 			# ------------------
-			#  Train Generators
+			#  Test Generator
 			# ------------------
 
-			optimizer_G.zero_grad()
 			# GAN loss
 			fake_B = generator(real_A)
 			pred_fake = discriminator(fake_B, real_A)
+			t_pred_d.append(torch.mean(pred_fake).item())
 			loss_GAN = criterion_GAN(pred_fake, valid)
 			# Pixel-wise loss
 			loss_pixel = criterion_pixelwise(fake_B, real_B)
 			# Total loss
 			loss_G = loss_GAN + lambda_pixel * loss_pixel
 			t_loss_G.append(loss_G.item())
-			loss_G.backward()
-			optimizer_G.step()
 
 			# ---------------------
-			#  Train Discriminator
+			#  Test Discriminator
 			# ---------------------
 
-			optimizer_D.zero_grad()
 			# Real loss
 			pred_real = discriminator(real_B, real_A)
 			loss_real = criterion_GAN(pred_real, valid)
@@ -157,40 +260,34 @@ with open("out.csv", "wt") as f:
 			# Total loss
 			loss_D = (0.5 * (loss_real + loss_fake))
 			t_loss_D.append(loss_D.item())
-			loss_D.backward()
-			optimizer_D.step()
 
-			# metric values
-			ssim_val = ssim(fake_B, real_B, data_range=1.0, size_average=False, requires_grad=False)
-			psnr_val = psnr(fake_B, real_B, data_range=1.0, requires_grad=False)
+		# metric values
+		ssim_val = ssim(fake_B, real_B, data_range=1.0, size_average=False)
+		ssim_val = torch.mean(ssim_val).item()
+		t_ssim.append(ssim_val)
+		psnr_val = psnr(fake_B, real_B, data_range=1.0)
+		psnr_val = torch.mean(psnr_val).item()
+		t_psnr.append(psnr_val)
 
-			# --------------
-			#  Log Progress
-			# --------------
+		# g.write(f"{epoch}, {opt.n_epochs}, {i}, {len(train_loader)}, \
+		# 	{round(loss_D.item(), 4)}, {round(loss_G.item(), 4)}, \
+		# 	{round(psnr_val, 4)}, {round(ssim_val, 4)}, \
+		# 	{round(torch.mean(pred_fake), 4)}\n")
 
-			# Determine approximate time left
-			batches_done = epoch * len(train_loader) + i
-			batches_left = opt.n_epochs * len(train_loader) - batches_done
-			time_left = datetime.timedelta(seconds=batches_left * (time.time() - prev_time))
-			prev_time = time.time()
+	ep_loss_d = np.asarray(t_loss_D).mean()
+	ep_loss_g = np.asarray(t_loss_G).mean()
+	ep_ssim = np.asarray(t_ssim).mean()
+	ep_psnr = np.asarray(t_psnr).mean()
+	ep_pred_d = np.asarray(t_pred_d).mean()
 
-			f.write(f"{epoch}, {opt.n_epochs}, {i}, {len(train_loader)}, {round(loss_D.item(), 4)}, {round(loss_G.item(), 4)}, \n")
+	g.write(f"{epoch+1}, {round(ep_loss_d, 4)}, {round(ep_loss_g, 4)}, \
+		{round(ep_psnr, 4)}, {round(ep_ssim, 4)}, {round(ep_pred_d, 4)}\n")
 
-			# If at sample interval save image
-			# if batches_done % opt.sample_interval == 0:
-			# 	sample_images(batches_done)
-		anloss_D.append(np.asarray(t_loss_D).mean())
-		anloss_G.append(np.asarray(t_loss_G).mean())
+	t_loss_D = []
+	t_loss_G = []
+	t_psnr   = []
+	t_ssim   = []
+	t_pred_d = []
 
-		t_loss_D = []
-		t_loss_G = []
-		# plt.plot(anloss_D, '')
-		# plt.plot(anloss_G)
-		# Save figure (dpi 300 is good when saving so graph has high resolution)
-		# plt.savefig('mygraph.png', dpi=300)
-
-		# if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
-		#     # Save model checkpoints
-		#     torch.save(generator.state_dict(), "saved_models/%s/generator_%d.pth" % (opt.dataset_name, epoch))
-		#     torch.save(discriminator.state_dict(), "saved_models/%s/discriminator_%d.pth" % (opt.dataset_name, epoch))
 f.close()
+g.close()
