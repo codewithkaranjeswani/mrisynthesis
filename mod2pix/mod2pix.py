@@ -31,7 +31,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--epoch", type=int, default=0, help="epoch to start training from")
 parser.add_argument("--n_epochs", type=int, default=5, help="number of epochs of training")
 parser.add_argument("--dataset_name", type=str, default="RIRE-ct-t1", help="name of the dataset")
-parser.add_argument("--batch_size", type=int, default=17, help="size of the batches")
+parser.add_argument("--batch_size", type=int, default=10, help="size of the batches")
 parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
 parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
@@ -66,7 +66,7 @@ lambda_pixel = 100
 patch = (1, opt.img_height // 2 ** 4, opt.img_width // 2 ** 4)
 
 # Initialize generator and discriminator
-generator = Anamnet().to(device)
+generator = AnamNet().to(device)
 discriminator = Discriminator(in_channels=1).to(device)
 
 # Initialize weights
@@ -77,7 +77,7 @@ discriminator.apply(weights_init_normal)
 optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
 optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
 
-dataset = MRI_T1_CT_Dataset("../Processed_Data/%s" % opt.dataset_name)
+dataset = MRI_T1_CT_Dataset("../../Processed_Data/%s" % opt.dataset_name)
 # print(len(dataset))
 test_split = .2
 shuffle_dataset = True
@@ -94,10 +94,20 @@ train_indices, test_indices = indices[split:], indices[:split]
 
 # Creating PT data samplers and loaders:
 train_sampler = SubsetRandomSampler(train_indices)
-test_sampler = SubsetRandomSampler(test_indices)
+test_sampler  = SubsetRandomSampler(test_indices)
 
 train_loader = DataLoader(dataset, batch_size=opt.batch_size, sampler=train_sampler)
 test_loader = DataLoader(dataset, batch_size=opt.batch_size, sampler=test_sampler)
+
+# print(len(train_loader))
+# one = iter(train_loader)
+# batch = one.next()
+# one = iter(train_loader)
+# for i in range(len(train_loader)):
+# 	batch = one.next()
+
+# print(batch['A'].shape)
+# exit(2)
 
 anloss_G = []
 anloss_D = []
@@ -112,6 +122,7 @@ cudnn.benchmark = True
 prev_time = time.time()
 # fig = plt.figure()
 with open("out.csv", "wt") as f:
+	f.write("current epoch, n_epochs, current batch, n_batches, D loss, G loss\n")
 	for epoch in tqdm(range(opt.epoch, opt.n_epochs)):
 		for i, batch in enumerate(tqdm(train_loader)):
 			# Model inputs
@@ -178,21 +189,6 @@ with open("out.csv", "wt") as f:
 			prev_time = time.time()
 
 			# Print log
-			# sys.stdout.write(
-			# 	"\r[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f, pixel: %f, adv: %f] ETA: %s"
-			# 	% (
-			# 		epoch,
-			# 		opt.n_epochs,
-			# 		i,
-			# 		len(train_loader),
-			# 		loss_D.item(),
-			# 		loss_G.item(),
-			# 		loss_pixel.item(),
-			# 		loss_GAN.item(),
-			# 		time_left,
-			# 	)
-			# )
-
 			f.write(f"{epoch}, {opt.n_epochs}, {i}, {len(train_loader)}, {round(loss_D.item(), 4)}, {round(loss_G.item(), 4)}\n")
 
 			# If at sample interval save image

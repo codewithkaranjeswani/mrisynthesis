@@ -183,7 +183,7 @@ class AnamNet(nn.Module):
         )
 
         # Final output
-        self.conv_final = nn.Conv2d(in_channels=64, out_channels=3,
+        self.conv_final = nn.Conv2d(in_channels=64, out_channels=1,
                                     kernel_size=1, padding=0, stride=1)
 
     def forward(self, x):
@@ -279,7 +279,7 @@ class AnamNet(nn.Module):
         #print('after conv4', x.shape)
         # Final output
         x = self.conv_final(x)
-        #print('Finaloutshape',x.shape)
+        # print('Finaloutshape',x.shape)
         #-----------------------------------------------------------------
         return x
 

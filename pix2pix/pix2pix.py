@@ -17,9 +17,13 @@ from torch.utils.data import DataLoader
 from torchvision import datasets
 from torch.autograd import Variable
 
+from metrics.ssim import ssim
+from metrics.psnr import psnr
+
 from models import *
 # from datasets import *
 from mydataset import *
+from skimage import metrics
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -30,7 +34,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--epoch", type=int, default=0, help="epoch to start training from")
 parser.add_argument("--n_epochs", type=int, default=5, help="number of epochs of training")
 parser.add_argument("--dataset_name", type=str, default="RIRE-ct-t1", help="name of the dataset")
-parser.add_argument("--batch_size", type=int, default=17, help="size of the batches")
+parser.add_argument("--batch_size", type=int, default=10, help="size of the batches")
 parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
 parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
@@ -76,7 +80,7 @@ discriminator.apply(weights_init_normal)
 optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
 optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
 
-dataset = MRI_T1_CT_Dataset("../Processed_Data/%s" % opt.dataset_name)
+dataset = MRI_T1_CT_Dataset("../../Processed_Data/%s" % opt.dataset_name)
 # print(len(dataset))
 test_split = .2
 shuffle_dataset = True
@@ -111,6 +115,7 @@ cudnn.benchmark = True
 prev_time = time.time()
 # fig = plt.figure()
 with open("out.csv", "wt") as f:
+	f.write("current epoch, n_epochs, current batch, n_batches, D loss, G loss, psnr, ssim\n")
 	for epoch in tqdm(range(opt.epoch, opt.n_epochs)):
 		for i, batch in enumerate(tqdm(train_loader)):
 			# Model inputs
@@ -155,16 +160,9 @@ with open("out.csv", "wt") as f:
 			loss_D.backward()
 			optimizer_D.step()
 
-	    # test
-	    # avg_psnr = 0
-	    # for batch in testing_data_loader:
-	    #     input, target = batch[0].to(device), batch[1].to(device)
-
-	    #     prediction = net_g(input)
-	    #     mse = criterionMSE(prediction, target)
-	    #     psnr = 10 * log10(1 / mse.item())
-	    #     avg_psnr += psnr
-	    # print("===> Avg. PSNR: {:.4f} dB".format(avg_psnr / len(testing_data_loader)))
+			# metric values
+			ssim_val = ssim(fake_B, real_B, data_range=1.0, size_average=False, requires_grad=False)
+			psnr_val = psnr(fake_B, real_B, data_range=1.0, requires_grad=False)
 
 			# --------------
 			#  Log Progress
@@ -176,23 +174,7 @@ with open("out.csv", "wt") as f:
 			time_left = datetime.timedelta(seconds=batches_left * (time.time() - prev_time))
 			prev_time = time.time()
 
-			# Print log
-			# sys.stdout.write(
-			# 	"\r[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f, pixel: %f, adv: %f] ETA: %s"
-			# 	% (
-			# 		epoch,
-			# 		opt.n_epochs,
-			# 		i,
-			# 		len(train_loader),
-			# 		loss_D.item(),
-			# 		loss_G.item(),
-			# 		loss_pixel.item(),
-			# 		loss_GAN.item(),
-			# 		time_left,
-			# 	)
-			# )
-
-			f.write(f"{epoch}, {opt.n_epochs}, {i}, {len(train_loader)}, {round(loss_D.item(), 4)}, {round(loss_G.item(), 4)}\n")
+			f.write(f"{epoch}, {opt.n_epochs}, {i}, {len(train_loader)}, {round(loss_D.item(), 4)}, {round(loss_G.item(), 4)}, \n")
 
 			# If at sample interval save image
 			# if batches_done % opt.sample_interval == 0:
