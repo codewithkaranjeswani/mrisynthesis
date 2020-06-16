@@ -1,6 +1,7 @@
 import torch
 
 def psnr(x, y, data_range=1.0):
+	# expects x and y to have dims (N, C, W, H)
 	if (x.size() != y.size()):
 		print("sizes of inputs are different in psnr function.")
 	N = x.size(0)

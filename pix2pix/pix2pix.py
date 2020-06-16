@@ -6,7 +6,7 @@ import itertools
 import time
 import datetime
 import sys
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 import torchvision.transforms as transforms
@@ -42,14 +42,14 @@ parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads 
 parser.add_argument("--img_height", type=int, default=256, help="size of image height")
 parser.add_argument("--img_width", type=int, default=256, help="size of image width")
 parser.add_argument("--channels", type=int, default=1, help="number of image channels")
-parser.add_argument("--sample_interval", type=int, default=400, help="interval between sampling of images from generators")
+parser.add_argument("--sample_interval", type=int, default=50, help="epochs after which we sample of images from generators")
 parser.add_argument("--checkpoint_interval", type=int, default=50, help="interval between model checkpoints")
 parser.add_argument("--gen", type=bool, default=False, help="Selecting generator, 0: pix2pix_gen, 1:anamnet_gen")
 opt = parser.parse_args()
 # print(opt)
 
-# os.makedirs("images/%s" % opt.dataset_name, exist_ok=True)
-# os.makedirs("saved_models/%s" % opt.dataset_name, exist_ok=True)
+os.makedirs("../../output/", exist_ok=True)
+os.makedirs("../../saved_models/", exist_ok=True)
 
 if torch.cuda.is_available():
 	device = torch.device("cuda:0")
@@ -73,16 +73,20 @@ generator = GeneratorUNet(in_channels=1, out_channels=1).to(device) \
 if opt.gen == 0 else AnamNet().to(device)
 discriminator = Discriminator(in_channels=1).to(device)
 
-# Initialize weights
-generator.apply(weights_init_normal)
-discriminator.apply(weights_init_normal)
+if opt.epoch != 0:
+	# Load pretrained models
+	generator.load_state_dict(torch.load("saved_models/%s/generator_%d.pth" % (opt.dataset_name, opt.epoch)))
+	discriminator.load_state_dict(torch.load("saved_models/%s/discriminator_%d.pth" % (opt.dataset_name, opt.epoch)))
+else:
+	# Initialize weights
+	generator.apply(weights_init_normal)
+	discriminator.apply(weights_init_normal)
 
 # Optimizers
 optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
 optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
 
 dataset = MRI_T1_CT_Dataset("../../Processed_Data/%s" % opt.dataset_name)
-# print(len(dataset))
 test_split = .2
 shuffle_dataset = True
 random_seed= 42
@@ -103,19 +107,61 @@ test_sampler = SubsetRandomSampler(test_indices)
 train_loader = DataLoader(dataset, batch_size=opt.batch_size, sampler=train_sampler)
 test_loader = DataLoader(dataset, batch_size=opt.batch_size, sampler=test_sampler)
 
-# anloss_G = []
-# anloss_D = []
-# anssim = []
-# anpsnr = []
+def save_trio(realA, fakeB, realB, epoch, i, label):
+	if realA.size() != realB.size() and realA.size() != fakeB.size():
+		print("All 3 image sizes should be same, in save_trios.")
 
-t_loss_G = []
-t_loss_D = []
-t_ssim = []
-t_psnr = []
-t_pred_d = []
+	fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
+	realA = realA[0,0,:,:].T.detach().cpu()
+	realA = realA.numpy()
+	fakeB = fakeB[0,0,:,:].T.detach().cpu()
+	fakeB = fakeB.numpy()
+	realB = realB[0,0,:,:].T.detach().cpu()
+	realB = realB.numpy()
+
+	ax1.imshow(realA, cmap="gray", origin="lower")
+	ax1.set_title("MRI")
+	ax2.imshow(fakeB, cmap="gray", origin="lower")
+	ax2.set_title("SynCT")
+	ax3.imshow(realB, cmap="gray", origin="lower")
+	ax3.set_title("CT")
+	plt.tight_layout()
+	# plt.show()
+	plt.savefig('../../output/sample_{0}_{1}_{2}.png'.format(epoch, label, i), dpi=300)
+
+def sample_images(epoch):
+	s = open("acc_pix2pix_{0}{1}.csv".format(int(opt.gen), opt.n_epochs), "wt")
+	s.write("epoch, type, ind, psnr, ssim\n")
+	for i in range(1):
+		# from train data
+		ind = torch.randint(0, len(train_indices), size=(1,)).item()
+		ind = train_indices[ind]
+		sample = dataset[ind]
+		realA = sample['A'].to(device)
+		realA = realA.view( tuple([1] + list(realA.size())) )
+		realB = sample['B'].to(device)
+		realB = realB.view( tuple([1] + list(realB.size())) )
+		fakeB = generator(realA)
+		save_trio(realA, fakeB, realB, epoch, i+1, "train")
+		ssim_val = ssim(fakeB, realB, data_range=1.0, size_average=False).item()
+		psnr_val = psnr(fakeB, realB, data_range=1.0).item()
+		s.write(f"{epoch}, train, {i+1}, {round(psnr_val, 4)}, {round(ssim_val, 4)}\n")
+		# from test data
+		ind = torch.randint(0, len(test_indices), size=(1,)).item()
+		ind = test_indices[ind]
+		sample = dataset[ind]
+		realA = sample['A'].to(device)
+		realA = realA.view( tuple([1] + list(realA.size())) )
+		realB = sample['B'].to(device)
+		realB = realB.view( tuple([1] + list(realB.size())) )
+		fakeB = generator(realA)
+		save_trio(realA, fakeB, realB, epoch, i+1, "test")
+		ssim_val = ssim(fakeB, realB, data_range=1.0, size_average=False).item()
+		psnr_val = psnr(fakeB, realB, data_range=1.0).item()
+		s.write(f"{epoch}, test, {i+1}, {round(psnr_val, 4)}, {round(ssim_val, 4)}\n")
+	s.close()
 
 cudnn.benchmark = True
-prev_time = time.time()
 f = open("loss_pix2pix_{0}{1}_train.csv".format(int(opt.gen), opt.n_epochs), "wt")
 g = open("loss_pix2pix_{0}{1}_test.csv".format(int(opt.gen), opt.n_epochs), "wt")
 # f.write("current epoch, n_epochs, current batch, n_batches, D loss, G loss, \
@@ -127,10 +173,17 @@ g = open("loss_pix2pix_{0}{1}_test.csv".format(int(opt.gen), opt.n_epochs), "wt"
 f.write("epoch, D loss, G loss, psnr avg, ssim avg, D pred\n")
 g.write("epoch, D loss, G loss, psnr avg, ssim avg, D pred\n")
 
+# prev_time = time.time()
 for epoch in tqdm(range(opt.epoch, opt.n_epochs)):
 	# ----------
 	#  Training
 	# ----------
+	t_loss_G = []
+	t_loss_D = []
+	t_ssim = []
+	t_psnr = []
+	t_pred_d = []
+
 	for i, batch in enumerate(tqdm(train_loader)):
 		# Model inputs
 		real_A = Variable(batch["A"].type(torch.FloatTensor)).to(device)
@@ -190,11 +243,11 @@ for epoch in tqdm(range(opt.epoch, opt.n_epochs)):
 		# --------------
 
 		# Determine approximate time left
-		batches_done = epoch * len(train_loader) + i
-		batches_left = opt.n_epochs * len(train_loader) - batches_done
-		time_left = datetime.timedelta(seconds=batches_left * \
-			(time.time() - prev_time))
-		prev_time = time.time()
+		# batches_done = epoch * len(train_loader) + i
+		# batches_left = opt.n_epochs * len(train_loader) - batches_done
+		# time_left = datetime.timedelta(seconds=batches_left * \
+		# 	(time.time() - prev_time))
+		# prev_time = time.time()
 
 		# f.write(f"{epoch}, {opt.n_epochs}, {i}, {len(train_loader)}, \
 		# 	{round(loss_D.item(), 4)}, {round(loss_G.item(), 4)}, \
@@ -207,18 +260,18 @@ for epoch in tqdm(range(opt.epoch, opt.n_epochs)):
 	ep_psnr = np.asarray(t_psnr).mean()
 	ep_pred_d = np.asarray(t_pred_d).mean()
 
-	f.write(f"{epoch+1}, {round(ep_loss_d, 4)}, {round(ep_loss_g, 4)}, \
-		{round(ep_psnr, 4)}, {round(ep_ssim, 4)}, {round(ep_pred_d, 4)}\n")
+	f.write(f"{epoch+1},{round(ep_loss_d, 4)},{round(ep_loss_g, 4)},\
+		{round(ep_psnr, 4)},{round(ep_ssim, 4)},{round(ep_pred_d, 4)}\n")
 
+	# ----------
+	#  Testing
+	# ----------
 	t_loss_D = []
 	t_loss_G = []
 	t_psnr   = []
 	t_ssim   = []
 	t_pred_d = []
 	
-	# ----------
-	#  Testing
-	# ----------
 	for i, batch in enumerate(tqdm(test_loader)):
 		# Model inputs
 		real_A = Variable(batch["A"].type(torch.FloatTensor)).to(device)
@@ -273,21 +326,22 @@ for epoch in tqdm(range(opt.epoch, opt.n_epochs)):
 		# 	{round(loss_D.item(), 4)}, {round(loss_G.item(), 4)}, \
 		# 	{round(psnr_val, 4)}, {round(ssim_val, 4)}, \
 		# 	{round(torch.mean(pred_fake), 4)}\n")
-
+	
 	ep_loss_d = np.asarray(t_loss_D).mean()
 	ep_loss_g = np.asarray(t_loss_G).mean()
 	ep_ssim = np.asarray(t_ssim).mean()
 	ep_psnr = np.asarray(t_psnr).mean()
 	ep_pred_d = np.asarray(t_pred_d).mean()
 
-	g.write(f"{epoch+1}, {round(ep_loss_d, 4)}, {round(ep_loss_g, 4)}, \
-		{round(ep_psnr, 4)}, {round(ep_ssim, 4)}, {round(ep_pred_d, 4)}\n")
+	g.write(f"{epoch+1},{round(ep_loss_d, 4)},{round(ep_loss_g, 4)},\
+		{round(ep_psnr, 4)},{round(ep_ssim, 4)},{round(ep_pred_d, 4)}\n")
 
-	t_loss_D = []
-	t_loss_G = []
-	t_psnr   = []
-	t_ssim   = []
-	t_pred_d = []
+	if (epoch+1) % opt.sample_interval == 0:
+		sample_images(epoch)
+	if opt.checkpoint_interval != -1 and (epoch+1) % opt.checkpoint_interval == 0:
+		# Save model checkpoints
+		torch.save(generator.state_dict(), "../../saved_models/generator_%d.pth" % (epoch))
+		torch.save(discriminator.state_dict(), "../../saved_models/discriminator_%d.pth" % (epoch))
 
 f.close()
 g.close()

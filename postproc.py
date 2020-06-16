@@ -1,18 +1,43 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
-df = pd.read_csv('../output/mod2pix_out_200.csv', sep=',', header=None)
+df = pd.read_csv('../output/loss_pix2pix_0200_train.csv', sep=',')
+tf = pd.read_csv('../output/loss_pix2pix_0200_test.csv', sep=',')
 
-fig = plt.figure()
+fig, (ax1, ax2) = plt.subplots(2, 1)
 
-ax1 = plt.subplot2grid((2, 1), (0, 0))
-ax2 = plt.subplot2grid((2, 1), (1, 0), sharex=ax1)
-
-ax1.plot(df.index, df[4], label="D loss")
+ax1.plot(df["epoch"], df[" D loss"], label="D loss train")
+ax1.plot(tf["epoch"], tf[" D loss"], label="D loss test")
 ax1.legend()
-
-ax2.plot(df.index, df[5], label="G loss")
+ax2.plot(df["epoch"], df[" G loss"], label="G loss train")
+ax2.plot(tf["epoch"], tf[" G loss"], label="G loss test")
 ax2.legend()
-
+ax1.set_xlabel("Epochs")
+ax1.set_ylabel("D Loss")
+ax1.set_title("D Loss decay for train and test")
+ax2.set_xlabel("Epochs")
+ax2.set_ylabel("G Loss")
+ax2.set_title("G Loss decay for train and test")
+plt.tight_layout()
 # plt.show()
 plt.savefig('../output/loss_graph.png', dpi=300)
+plt.close()
+fig, (ax1, ax2) = plt.subplots(2, 1)
+
+ax1.plot(df["epoch"], df[" psnr avg"], label="psnr avg train")
+ax1.plot(tf["epoch"], tf[" psnr avg"], label="psnr avg test")
+ax1.legend()
+ax2.plot(df["epoch"], df[" ssim avg"], label="ssim avg train")
+ax2.plot(tf["epoch"], tf[" ssim avg"], label="ssim avg test")
+ax2.legend()
+ax1.set_xlabel("Epochs")
+ax1.set_ylabel("PSNR (in dB)")
+ax1.set_title("PSNR for train and test")
+ax2.set_xlabel("Epochs")
+ax2.set_ylabel("SSIM")
+ax2.set_title("SSIM for train and test")
+plt.tight_layout()
+# plt.show()
+plt.savefig('../output/acc_graph.png', dpi=300)
+plt.close()
+
