@@ -1,1 +1,7 @@
-pix2pix/metrics/__pycache__/
+util/__pycache__/
+models/__pycache__/
+input/
+output/
+saved_models/
+test.py
+main_test.py

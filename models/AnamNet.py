@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Jun  1 10:04:03 2020
-
-@author: naveen_p
-"""
-
 import torch
 import torch.nn as nn
 
@@ -83,15 +75,19 @@ class Bottleneck(nn.Module):
         out = main + ext
         return self.out_activation(out)
 
-class AnamNet(nn.Module):
+###########################################
+#           AnamNet Generator 
+###########################################
 
-    def __init__(self):
+class AnamNetGenerator(nn.Module):
 
-        super(AnamNet, self).__init__()
+    def __init__(self, C=1):
+
+        super(AnamNetGenerator, self).__init__()
 
         # Conv block 1 - Down 1
         self.conv1_block = nn.Sequential(
-            nn.Conv2d(in_channels=1, out_channels=64,
+            nn.Conv2d(in_channels=C, out_channels=64,
                       kernel_size=3, padding=1, stride=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
@@ -292,5 +288,3 @@ class AnamNet(nn.Module):
             pp += nn
         return pp,  (pp*32)/(8*1024*1024)
     
-
-

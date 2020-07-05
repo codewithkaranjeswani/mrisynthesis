@@ -2,7 +2,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 
-
 def weights_init_normal(m):
     classname = m.__class__.__name__
     if classname.find("Conv") != -1:
@@ -11,11 +10,9 @@ def weights_init_normal(m):
         torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
         torch.nn.init.constant_(m.bias.data, 0.0)
 
-
-##############################
-#           U-NET
-##############################
-
+###########################################
+#           UNet Generator 
+###########################################
 
 class UNetDown(nn.Module):
     def __init__(self, in_size, out_size, normalize=True, dropout=0.0):
@@ -30,7 +27,6 @@ class UNetDown(nn.Module):
 
     def forward(self, x):
         return self.model(x)
-
 
 class UNetUp(nn.Module):
     def __init__(self, in_size, out_size, dropout=0.0):
@@ -50,7 +46,6 @@ class UNetUp(nn.Module):
         x = torch.cat((x, skip_input), 1)
 
         return x
-
 
 class GeneratorUNet(nn.Module):
     def __init__(self, in_channels=3, out_channels=3):
@@ -100,15 +95,13 @@ class GeneratorUNet(nn.Module):
 
         return self.final(u7)
 
+###########################################
+#        PatchGAN Discriminator
+###########################################
 
-##############################
-#        Discriminator
-##############################
-
-
-class Discriminator(nn.Module):
-    def __init__(self, in_channels=3):
-        super(Discriminator, self).__init__()
+class PatchDiscriminator(nn.Module):
+    def __init__(self, in_channels=4):
+        super(PatchDiscriminator, self).__init__()
 
         def discriminator_block(in_filters, out_filters, normalization=True):
             """Returns downsampling layers of each discriminator block"""
@@ -119,7 +112,7 @@ class Discriminator(nn.Module):
             return layers
 
         self.model = nn.Sequential(
-            *discriminator_block(in_channels * 2, 64, normalization=False),
+            *discriminator_block(in_channels, 64, normalization=False),
             *discriminator_block(64, 128),
             *discriminator_block(128, 256),
             *discriminator_block(256, 512),
