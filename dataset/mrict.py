@@ -8,9 +8,10 @@ from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 
 class MRI_T1_CT_Dataset(Dataset):
-	def __init__(self, root, slices=3):
-		assert slices % 2 == 1, "slices must be odd!"
-		es = int(slices/2) # floor operation
+	def __init__(self, root, slices=1):
+		self.slices = slices
+		assert self.slices % 2 == 1, "self.slices must be odd!"
+		es = int(self.slices/2) # floor operation
 		data_dir = os.listdir(root)
 		ct_fn = sorted(os.listdir(root + '/' + data_dir[0]))
 		mr_fn = sorted(os.listdir(root + '/' + data_dir[1]))
@@ -21,25 +22,27 @@ class MRI_T1_CT_Dataset(Dataset):
 				ct_img = nib.load(root + '/' + data_dir[0] + '/' + ct_file)
 				ct_img_data = ct_img.get_fdata()
 				mid = (int)(ct_img_data.shape[2] / 2)
-				ct_img_data = ct_img_data[0::2,0::2,mid-9-es:mid+9+es]
+				ct_img_data = ct_img_data[0::2,0::2,mid-10-es:mid+10+es]
 				ct_img_data = np.array(ct_img_data)
 				mr_img = nib.load(root + '/' + data_dir[1] + '/' + mr_file)
 				mr_img_data = mr_img.get_fdata()
 				mid = (int)(mr_img_data.shape[2] / 2)
-				mr_img_data = mr_img_data[:,:,mid-9-es:mid+9+es]
+				mr_img_data = mr_img_data[:,:,mid-10-es:mid+10+es]
 				mr_img_data = np.array(mr_img_data)
 				assert mr_img_data.shape == ct_img_data.shape, "MRI and CT have different shapes"
 				sh = mr_img_data.shape[0] # square input # sh = 256
-				for j in range(1, 19):
-					finmr = torch.Tensor(size=(slices, sh, sh))
-					finct = torch.Tensor(size=(slices, sh, sh))
+				for j in range(0, 20):
+					finmr = torch.Tensor(size=(self.slices, sh, sh))
+					finct = torch.Tensor(size=(self.slices, sh, sh))
 
 					mr_in = mr_img_data[:,:,j-es:j+es+1]
 					mr_in = torch.from_numpy(mr_in)
+					mr_in = mr_in.view(mr_in.size(0), mr_in.size(1), 2*es + 1)
 					ct_in = ct_img_data[:,:,j-es:j+es+1]
 					ct_in = torch.from_numpy(ct_in)
+					ct_in = ct_in.view(ct_in.size(0), ct_in.size(1), 2*es + 1)
 
-					for k in range(slices):
+					for k in range(self.slices):
 						mrh = mr_in[:,:,k]
 						cth = ct_in[:,:,k]
 
@@ -64,10 +67,10 @@ class MRI_T1_CT_Dataset(Dataset):
 	def __getitem__(self, index, a2b=1):
 		[mr_img, ct_img] = self.datalist[index]
 		if a2b == 1:
-			ct_img = ct_img[1]
+			ct_img = ct_img[int(self.slices / 2)]
 			ct_img = ct_img.view(1, ct_img.size(0), ct_img.size(1))
 		elif a2b == 0:
-			mr_img = mr_img[1]
+			mr_img = mr_img[int(self.slices / 2)]
 			mr_img = mr_img.view(1, mr_img.size(0), mr_img.size(1))
 		else:
 			print("Error, direction not 0 or 1!")
