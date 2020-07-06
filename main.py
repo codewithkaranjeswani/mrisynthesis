@@ -36,14 +36,14 @@ parser.add_argument("--batch_size", type=int, default=16, help="size of the batc
 parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
 parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
-parser.add_argument("--decay_epoch", type=int, default=100, help="epoch from which to start lr decay")
+# parser.add_argument("--decay_epoch", type=int, default=100, help="epoch from which to start lr decay")
 parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
 parser.add_argument("--img_height", type=int, default=256, help="size of image height")
 parser.add_argument("--img_width", type=int, default=256, help="size of image width")
 # parser.add_argument("--channels", type=int, default=1, help="number of image channels")
 parser.add_argument("--sample_interval", type=int, default=10, help="epochs after which we sample of images from generators")
 parser.add_argument("--checkpoint_interval", type=int, default=50, help="epochs between model checkpoints")
-parser.add_argument("--gen", type=str, default="ENet", help="Selecting generator")
+parser.add_argument("--gen", type=str, default="ENet", help="Selecting generator: UNet | AnamNet | ENet")
 parser.add_argument("--in_ch", type=int, default=3, help="Considering neighbouring slices from input")
 opt = parser.parse_args()
 # print(opt)
@@ -64,8 +64,8 @@ criterion_GAN = torch.nn.MSELoss().to(device)
 criterion_pixelwise = torch.nn.L1Loss().to(device)
 
 # Loss weight of L1 pixel-wise loss between translated image and real image
-lambda_pixel = 100
-lambda_vgg = 100
+lambda_pixel = 1
+lambda_vgg = 0.01
 
 # Calculate output of image discriminator (PatchGAN)
 patch = (1, opt.img_height // 2 ** 4, opt.img_width // 2 ** 4)
@@ -173,7 +173,7 @@ indices = list(range(dataset_size))
 # splitting at 13 patients data # 13*18 = 234 # 4*18 = 72 # tot = 17*18 = 306
 split = 72
 for ki in range(4):
-	print("K = {}".format(ki))
+	print("K = {}".format(ki+1))
 	start_split = ki * split
 	end_split = start_split + split
 	if shuffle_dataset:

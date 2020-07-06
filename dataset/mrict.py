@@ -65,8 +65,10 @@ class MRI_T1_CT_Dataset(Dataset):
 		[mr_img, ct_img] = self.datalist[index]
 		if a2b == 1:
 			ct_img = ct_img[1]
+			ct_img = ct_img.view(1, ct_img.size(0), ct_img.size(1))
 		elif a2b == 0:
 			mr_img = mr_img[1]
+			mr_img = mr_img.view(1, mr_img.size(0), mr_img.size(1))
 		else:
 			print("Error, direction not 0 or 1!")
 			exit(1)
@@ -76,20 +78,20 @@ class MRI_T1_CT_Dataset(Dataset):
 		return len(self.datalist)
 
 
-dataset = MRI_T1_CT_Dataset("../../../Processed_Data/%s" % "RIRE-ct-t1")
+# dataset = MRI_T1_CT_Dataset("../../../Processed_Data/%s" % "RIRE-ct-t1")
 
-print(len(dataset))
-print(dataset[0]['A'].size())
-print(dataset[0]['B'].size())
+# print(len(dataset))
+# print(dataset[0]['A'].size())
+# print(dataset[0]['B'].size())
 
-import matplotlib.pyplot as plt
-fig, (ax1, ax2) = plt.subplots(1, 2)
-for ind in range(len(dataset)):
-	ax1.imshow(dataset[ind]['A'][1].T, cmap="gray", origin="lower")
-	ax2.imshow(dataset[ind]['B'].T, cmap="gray", origin="lower")
-	ax1.set_title("MRI")
-	ax2.set_title("CT")
-	# plt.tight_layout()
-	# plt.show()
-	plt.savefig('../input/some_{0}_{1}.png'.format(int((ind) / 18) + 1, (ind) % 18 + 1), dpi=300)
+# import matplotlib.pyplot as plt
+# fig, (ax1, ax2) = plt.subplots(1, 2)
+# for ind in range(len(dataset)):
+# 	ax1.imshow(dataset[ind]['A'][1].T, cmap="gray", origin="lower")
+# 	ax2.imshow(dataset[ind]['B'].T, cmap="gray", origin="lower")
+# 	ax1.set_title("MRI")
+# 	ax2.set_title("CT")
+# 	# plt.tight_layout()
+# 	# plt.show()
+# 	plt.savefig('../input/some_{0}_{1}.png'.format(int((ind) / 18) + 1, (ind) % 18 + 1), dpi=300)
 

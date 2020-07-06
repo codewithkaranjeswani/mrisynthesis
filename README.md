@@ -4,6 +4,10 @@
 # Todo list
 Make a function for sampling single image in main
 Sample the image from same index over and over to make a gif
+Make function for test of the sample (over all data or half data? Don't know)
+Implement mse, mae, lr_decay
+Experiment with hyperparameters
+
 
 # Some advice
 In sample_images(), you can get discriminator output as well for the fake image. Do that! And display it on image itself along with the psnr, ssim.

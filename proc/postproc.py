@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
-df = pd.read_csv('../output/k0_loss_pix2pix_ENet_200_train.csv', sep=',')
-tf = pd.read_csv('../output/k0loss_pix2pix_ENet_200_test.csv', sep=',')
+df = pd.read_csv('../output/results_06072020_1/k3_loss_pix2pix_ENet_200_train.csv', sep=',')
+tf = pd.read_csv('../output/results_06072020_1/k3loss_pix2pix_ENet_200_test.csv', sep=',')
 
 fig, (ax1, ax2) = plt.subplots(2, 1)
 
