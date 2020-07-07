@@ -5,3 +5,4 @@ output/
 saved_models/
 test.py
 main_test.py
+script.sh

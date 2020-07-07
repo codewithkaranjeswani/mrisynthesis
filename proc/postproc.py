@@ -1,9 +1,11 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
-dire = '../output/results_06072020_1/csv/'
-df = pd.read_csv(dire + 'k3_loss_pix2pix_ENet_200_train.csv', sep=',')
-tf = pd.read_csv(dire + 'k3loss_pix2pix_ENet_200_test.csv', sep=',')
+diry =  '../output/results_07072020_2/UNet_10_0_1_output/'
+
+dire = diry + 'csv/'
+df = pd.read_csv(dire + 'k0_loss_pix2pix_UNet_200_train.csv', sep=',')
+tf = pd.read_csv(dire + 'k0_loss_pix2pix_UNet_200_test.csv', sep=',')
 
 fig, (ax1, ax2) = plt.subplots(2, 1)
 
@@ -23,7 +25,7 @@ ax2.set_ylabel("G Loss")
 ax2.set_title("G Loss decay for train and test")
 plt.tight_layout()
 # plt.show()
-plt.savefig('../output/loss_graph.png', dpi=300)
+plt.savefig(diry + 'loss_graph.png', dpi=300)
 plt.close()
 fig, (ax1, ax2) = plt.subplots(2, 1)
 
@@ -43,6 +45,6 @@ ax2.set_ylabel("SSIM")
 ax2.set_title("SSIM for train and test")
 plt.tight_layout()
 # plt.show()
-plt.savefig('../output/acc_graph.png', dpi=300)
+plt.savefig(diry + 'acc_graph.png', dpi=300)
 plt.close()
 

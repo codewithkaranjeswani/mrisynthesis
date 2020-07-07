@@ -41,15 +41,17 @@ parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads 
 parser.add_argument("--img_height", type=int, default=256, help="size of image height")
 parser.add_argument("--img_width", type=int, default=256, help="size of image width")
 parser.add_argument("--sample_interval", type=int, default=10, help="epochs after which we sample of images from generators")
-parser.add_argument("--checkpoint_interval", type=int, default=50, help="epochs between model checkpoints")
+parser.add_argument("--checkpoint_interval", type=int, default=201, help="epochs between model checkpoints")
 parser.add_argument("--gen", type=str, default="ENet", help="Selecting generator: UNet | AnamNet | ENet")
 parser.add_argument("--in_ch", type=int, default=1, help="Considering neighbouring slices from input")
+parser.add_argument("--lambda_pixel", type=float, default=10, help="lambda_pixel weight the reconstruction loss")
+parser.add_argument("--lambda_vgg", type=float, default=10, help="lambda_vgg weight for perceptual loss")
 opt = parser.parse_args()
 # print(opt)
 
-os.makedirs("output/", exist_ok=True)
+os.makedirs("output/csv/", exist_ok=True)
 os.makedirs("output/sample_images/", exist_ok=True)
-os.makedirs("saved_models/", exist_ok=True)
+os.makedirs("output/saved_models/", exist_ok=True)
 
 if torch.cuda.is_available():
 	device = torch.device("cuda:0")
@@ -63,14 +65,14 @@ criterion_GAN = torch.nn.MSELoss().to(device)
 criterion_pixelwise = torch.nn.L1Loss().to(device)
 
 # Loss weight of L1 pixel-wise loss between translated image and real image
-lambda_pixel = 100
-# lambda_vgg = 0.01
+lambda_pixel = opt.lambda_pixel
+lambda_vgg = opt.lambda_vgg
 
 # Calculate output of image discriminator (PatchGAN)
 patch = (1, opt.img_height // 2 ** 4, opt.img_width // 2 ** 4)
 
 # specific indices to keep track of during training
-spec_ind = [162, 235]
+spec_ind = [10, 41, 162, 235]
 
 # Initialize generator and discriminator
 if (opt.gen == 'UNet'):
@@ -83,12 +85,12 @@ else:
 	print("Generator not defined.")
 	exit(1)
 discriminator = PatchDiscriminator(in_channels=opt.in_ch+1).to(device)
-# vgg = VGG16().to(device)
+vgg = VGG16().to(device)
 
 if opt.epoch != 0:
 	# Load pretrained models
-	generator.load_state_dict(torch.load("saved_models/%s/generator_%d.pth" % (opt.dataset_name, opt.epoch)))
-	discriminator.load_state_dict(torch.load("saved_models/%s/discriminator_%d.pth" % (opt.dataset_name, opt.epoch)))
+	generator.load_state_dict(torch.load("output/saved_models/%s/generator_%d.pth" % (opt.dataset_name, opt.epoch)))
+	discriminator.load_state_dict(torch.load("output/saved_models/%s/discriminator_%d.pth" % (opt.dataset_name, opt.epoch)))
 else:
 	# Initialize weights
 	generator.apply(weights_init_normal)
@@ -103,7 +105,7 @@ def lambda_rule(epoch):
 	mf = 1 - max(0, (epoch + 1 - opt.decay_epoch) / (opt.n_epochs - opt.decay_epoch + 1))
 	return mf
 
-def save_trio(realA, fakeB, realB, epoch, i, label, gen):
+def save_trio(realA, fakeB, realB, epoch, i, label, gen, ki):
 	fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
 	realA = realA[0,int(opt.in_ch / 2),:,:].T.detach().cpu()
 	realA = realA.numpy()
@@ -120,10 +122,10 @@ def save_trio(realA, fakeB, realB, epoch, i, label, gen):
 	ax3.set_title("CT")
 	plt.tight_layout()
 	# plt.show()
-	plt.savefig('output/sample_images/sample_{0}_{1}_{2}_{3}.png'.format(gen, epoch, label, i), dpi=300)
+	plt.savefig('output/sample_images/k{4}_sample_{0}_{1}_{2}_{3}.png'.format(gen, epoch, label, i, ki), dpi=300)
 	plt.close()
 
-def sample_images(epoch):
+def sample_images(epoch, ki):
 	for i in range(1):
 		# from train data
 		ind = torch.randint(0, len(train_indices), size=(1,)).item()
@@ -134,10 +136,12 @@ def sample_images(epoch):
 		realB = sample['B'].to(device)
 		realB = realB.view( tuple([1] + list(realB.size())) )
 		fakeB = generator(realA)
-		save_trio(realA, fakeB, realB, epoch+1, i+1, "train", opt.gen)
-		ssim_val = ssim(fakeB, realB, data_range=1.0, size_average=False).item()
+		save_trio(realA, fakeB, realB, epoch+1, i+1, "train", opt.gen, ki)
+		mae_val = criterion_pixelwise(fakeB, realB).item() * 255
+		mse_val = criterion_GAN(fakeB, realB).item() * (255**2)
 		psnr_val = psnr(fakeB, realB, data_range=1.0).item()
-		s.write(f"{epoch+1},train,{i+1},{round(psnr_val, 4)},{round(ssim_val, 4)}\n")
+		ssim_val = ssim(fakeB, realB, data_range=1.0, size_average=False).item()
+		s.write(f"{epoch+1},train,{i+1},{round(mae_val, 4)},{round(mse_val, 4)},{round(psnr_val, 4)},{round(ssim_val, 4)}\n")
 		# from test data
 		ind = torch.randint(0, len(test_indices), size=(1,)).item()
 		ind = test_indices[ind]
@@ -147,15 +151,14 @@ def sample_images(epoch):
 		realB = sample['B'].to(device)
 		realB = realB.view( tuple([1] + list(realB.size())) )
 		fakeB = generator(realA)
-		save_trio(realA, fakeB, realB, epoch+1, i+1, "test", opt.gen)
+		save_trio(realA, fakeB, realB, epoch+1, i+1, "test", opt.gen, ki)
+		mae_val = criterion_pixelwise(fakeB, realB).item() * 255
+		mse_val = criterion_GAN(fakeB, realB).item() * (255**2)
 		psnr_val = psnr(fakeB, realB, data_range=1.0).item()
 		ssim_val = ssim(fakeB, realB, data_range=1.0, size_average=False).item()
-		mae_val = criterion_pixelwise(fakeB, realB).item()
-		mse_val = criterion_GAN(fakeB, realB).item()
-
 		s.write(f"{epoch+1},test,{i+1},{round(mae_val, 4)},{round(mse_val, 4)},{round(psnr_val, 4)},{round(ssim_val, 4)}\n")
 
-def sample_special_images(epoch):
+def sample_special_images(epoch, ki):
 	for i in spec_ind:
 		sample = dataset[i]
 		realA = sample['A'].to(device)
@@ -163,17 +166,16 @@ def sample_special_images(epoch):
 		realB = sample['B'].to(device)
 		realB = realB.view( tuple([1] + list(realB.size())) )
 		fakeB = generator(realA)
-		save_trio(realA, fakeB, realB, epoch+1, i+1, "spec", opt.gen)
-		ssim_val = ssim(fakeB, realB, data_range=1.0, size_average=False).item()
-		psnr_val = psnr(fakeB, realB, data_range=1.0).item()
+		save_trio(realA, fakeB, realB, epoch+1, i+1, "spec", opt.gen, ki)
 		mae_val = criterion_pixelwise(fakeB, realB).item()
 		mse_val = criterion_GAN(fakeB, realB).item()
-
+		psnr_val = psnr(fakeB, realB, data_range=1.0).item()
+		ssim_val = ssim(fakeB, realB, data_range=1.0, size_average=False).item()
 		m.write(f"{epoch+1},spec,{i+1},{round(mae_val, 4)},{round(mse_val, 4)},{round(psnr_val, 4)},{round(ssim_val, 4)}\n")
 
 cudnn.benchmark = True
 
-dataset = MRI_T1_CT_Dataset("../Processed_Data/%s" % opt.dataset_name, 1)
+dataset = MRI_T1_CT_Dataset("../Processed_Data/%s" % opt.dataset_name, opt.in_ch)
 shuffle_dataset = False
 random_seed= 42
 
@@ -182,8 +184,8 @@ dataset_size = len(dataset)
 indices = list(range(dataset_size))
 # splitting at 13 patients data # 13*18 = 234 # 4*18 = 72 # tot = 17*18 = 306
 split = 72
-for ki in range(4):
-	print("K = {}".format(ki+1))
+for ki in range(1):
+	# print("K = {}".format(ki+1))
 	start_split = ki * split
 	end_split = start_split + split
 	if shuffle_dataset:
@@ -198,10 +200,10 @@ for ki in range(4):
 	train_loader = DataLoader(dataset, batch_size=opt.batch_size, sampler=train_sampler)
 	test_loader = DataLoader(dataset, batch_size=opt.batch_size, sampler=test_sampler)
 
-	f = open("output/k{0}_loss_pix2pix_{1}_{2}_train.csv".format(ki, opt.gen, opt.n_epochs), "wt")
-	g = open("output/k{0}_loss_pix2pix_{1}_{2}_test.csv".format(ki, opt.gen, opt.n_epochs), "wt")
-	s = open("output/k{0}_randouts_acc_pix2pix_{1}_{2}.csv".format(ki, opt.gen, opt.n_epochs), "wt")
-	m = open("output/k{0}_specouts_acc_pix2pix_{1}_{2}.csv".format(ki, opt.gen, opt.n_epochs), "wt")
+	f = open("output/csv/k{0}_loss_pix2pix_{1}_{2}_train.csv".format(ki, opt.gen, opt.n_epochs), "wt")
+	g = open("output/csv/k{0}_loss_pix2pix_{1}_{2}_test.csv".format(ki, opt.gen, opt.n_epochs), "wt")
+	s = open("output/csv/k{0}_randouts_acc_pix2pix_{1}_{2}.csv".format(ki, opt.gen, opt.n_epochs), "wt")
+	m = open("output/csv/k{0}_specouts_acc_pix2pix_{1}_{2}.csv".format(ki, opt.gen, opt.n_epochs), "wt")
 
 	f.write("epoch,D loss,G loss,mae avg,mse avg,psnr avg,ssim avg,D pred\n")
 	g.write("epoch,D loss,G loss,mae avg,mse avg,psnr avg,ssim avg,D pred\n")
@@ -242,7 +244,6 @@ for ki in range(4):
 			# ------------------
 			#  Train Generator
 			# ------------------
-
 			optimizer_G.zero_grad()
 			# GAN loss
 			fake_B = generator(real_A)
@@ -252,11 +253,11 @@ for ki in range(4):
 			# Pixel-wise loss
 			loss_pixel = criterion_pixelwise(fake_B, real_B)
 			# VGG loss
-			# VGG_real=vgg(real_B.expand([int(real_B.size()[0]),3,int(real_B.size()[2]),int(real_B.size()[3])]))[0]
-			# VGG_fake=vgg(fake_B.expand([int(real_B.size()[0]),3,int(real_B.size()[2]),int(real_B.size()[3])]))[0]
-			# VGG_loss=criterion_pixelwise(VGG_fake,VGG_real)
+			VGG_real=vgg(real_B.expand([int(real_B.size()[0]),3,int(real_B.size()[2]),int(real_B.size()[3])]))[0]
+			VGG_fake=vgg(fake_B.expand([int(real_B.size()[0]),3,int(real_B.size()[2]),int(real_B.size()[3])]))[0]
+			VGG_loss=criterion_pixelwise(VGG_fake,VGG_real)
 			# Total loss
-			loss_G = loss_GAN + lambda_pixel * loss_pixel # + lambda_vgg * VGG_loss
+			loss_G = loss_GAN + lambda_pixel * loss_pixel + lambda_vgg * VGG_loss
 			t_loss_G.append(loss_G.item())
 			loss_G.backward()
 			optimizer_G.step()
@@ -285,10 +286,10 @@ for ki in range(4):
 			psnr_val = psnr(fake_B, real_B, data_range=1.0)
 			psnr_val = torch.mean(psnr_val).item()
 			t_psnr.append(psnr_val)
-			mae_val = torch.mean(loss_pixel).item()
+			mae_val = 255 * loss_pixel.item()
 			t_mae.append(mae_val)
 			mse_val = criterion_GAN(fake_B, real_B)
-			mse_val = torch.mean(mse_val).item()
+			mse_val = 255**2 * mse_val.item()
 			t_mse.append(mse_val)
 
 		ep_loss_d = np.asarray(t_loss_D).mean()
@@ -363,10 +364,10 @@ for ki in range(4):
 			psnr_val = psnr(fake_B, real_B, data_range=1.0)
 			psnr_val = torch.mean(psnr_val).item()
 			t_psnr.append(psnr_val)
-			mae_val = torch.mean(loss_pixel).item()
+			mae_val = 255 * loss_pixel.item()
 			t_mae.append(mae_val)
 			mse_val = criterion_GAN(fake_B, real_B)
-			mse_val = torch.mean(mse_val).item()
+			mse_val = 255**2 * mse_val.item()
 			t_mse.append(mse_val)
 		
 		ep_loss_d = np.asarray(t_loss_D).mean()
@@ -385,11 +386,12 @@ for ki in range(4):
 		scheduler_D.step()
 
 		if (epoch+1) % opt.sample_interval == 0:
-			sample_images(epoch)
+			# sample_images(epoch, ki)
+			sample_special_images(epoch, ki)
 		if opt.checkpoint_interval != -1 and (epoch+1) % opt.checkpoint_interval == 0:
 			# Save model checkpoints
-			torch.save(generator.state_dict(), "saved_models/k%d_generator_%d.pth" % (ki, epoch))
-			torch.save(discriminator.state_dict(), "saved_models/k%d_discriminator_%d.pth" % (ki, epoch))
+			torch.save(generator.state_dict(), "output/saved_models/k%d_generator_%d.pth" % (ki, epoch))
+			torch.save(discriminator.state_dict(), "output/saved_models/k%d_discriminator_%d.pth" % (ki, epoch))
 
 	f.close()
 	g.close()

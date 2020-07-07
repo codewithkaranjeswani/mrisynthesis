@@ -10,7 +10,7 @@ from torch.utils.data import Dataset
 class MRI_T1_CT_Dataset(Dataset):
 	def __init__(self, root, slices=1):
 		self.slices = slices
-		assert self.slices % 2 == 1, "self.slices must be odd!"
+		assert self.slices % 2 == 1, "slices must be odd!"
 		es = int(self.slices/2) # floor operation
 		data_dir = os.listdir(root)
 		ct_fn = sorted(os.listdir(root + '/' + data_dir[0]))
@@ -22,16 +22,16 @@ class MRI_T1_CT_Dataset(Dataset):
 				ct_img = nib.load(root + '/' + data_dir[0] + '/' + ct_file)
 				ct_img_data = ct_img.get_fdata()
 				mid = (int)(ct_img_data.shape[2] / 2)
-				ct_img_data = ct_img_data[0::2,0::2,mid-10-es:mid+10+es]
+				ct_img_data = ct_img_data[0::2,0::2,mid-10:mid+10]
 				ct_img_data = np.array(ct_img_data)
 				mr_img = nib.load(root + '/' + data_dir[1] + '/' + mr_file)
 				mr_img_data = mr_img.get_fdata()
 				mid = (int)(mr_img_data.shape[2] / 2)
-				mr_img_data = mr_img_data[:,:,mid-10-es:mid+10+es]
+				mr_img_data = mr_img_data[:,:,mid-10:mid+10]
 				mr_img_data = np.array(mr_img_data)
 				assert mr_img_data.shape == ct_img_data.shape, "MRI and CT have different shapes"
 				sh = mr_img_data.shape[0] # square input # sh = 256
-				for j in range(0, 20):
+				for j in range(es, 20-es):
 					finmr = torch.Tensor(size=(self.slices, sh, sh))
 					finct = torch.Tensor(size=(self.slices, sh, sh))
 
@@ -84,8 +84,8 @@ class MRI_T1_CT_Dataset(Dataset):
 # dataset = MRI_T1_CT_Dataset("../../../Processed_Data/%s" % "RIRE-ct-t1")
 
 # print(len(dataset))
-# print(dataset[0]['A'].size())
-# print(dataset[0]['B'].size())
+# print(dataset[1]['A'].size())
+# print(dataset[1]['B'].size())
 
 # import matplotlib.pyplot as plt
 # fig, (ax1, ax2) = plt.subplots(1, 2)

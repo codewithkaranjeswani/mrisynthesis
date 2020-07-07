@@ -95,6 +95,15 @@ class GeneratorUNet(nn.Module):
 
         return self.final(u7)
 
+    def getnumberofparams(self,model):
+        pp=0
+        for p in (model.parameters()):
+            nn=1
+            for s in (p.size()):
+                nn = nn*s
+            pp += nn
+        return pp,  (pp*32)/(8*1024*1024)
+
 ###########################################
 #        PatchGAN Discriminator
 ###########################################
